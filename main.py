@@ -21,14 +21,14 @@ def process_pdfs():
             text = extract_pdf_text(file_path)
             info = extract_info(text)
 
-            if not info["project_name"] or not info["bidding_company"]:
+            if not info["项目名称"] or not info["投标单位"]:
                 print(f"[警告] 未提取到必要字段: {file_name}")
                 continue
 
             info.update({
-                "file_name": file_name,
-                "raw_text": text,
-                "extracted_at": datetime.now()
+                "文件名": file_name,
+                "原始文本": text,
+                "提取文件信息时间": datetime.now()
             })
 
             insert_bid_data(info)
