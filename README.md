@@ -34,7 +34,7 @@
 
 ### 2. config.py - 配置管理
 - 数据库连接配置（MongoDB）
-- 自动检测Tesseract和Poppler路径
+- 自动检测Tesseract(这之前需要手动安装)和Poppler路径(poppler现在用的是解压压缩包的简陋办法)
 
 ### 3. pdf_reader.py - PDF文本提取
 **功能**：PDF文本提取
