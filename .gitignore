@@ -1,7 +1,7 @@
-# 排除PDF文件（通常包含敏感数据）
 pdfs/*.pdf
 
 poppler/
+test_nlp.py
 
 # 排除Python缓存
 __pycache__/

@@ -2,8 +2,9 @@
 
 ## 快速开始
 
+0. 安装相关依赖
 1. 将要处理的 PDF 文件放到该项目 `pdfs` 文件夹中
-2. 把poppler.zip解压到当前文件夹，具体形式如项目结构所示
+2. 把poppler.zip解压到当前文件夹，具体形式如项目结构所示（这个做法后面也应该要改，现在将就用）
 3. 安装Tesseract，这个效果一般，先将就着用（见末尾详细说明）
 4. 运行 `python main.py` 开始处理
 5. 后续使用处理的信息，要自己写，我只写到了把pdf读到mongodb里面，和导出到csv的逻辑
@@ -85,28 +86,3 @@ tesseract 对图片进行 OCR
 
 **注意**：确保安装了支持中文的Tesseract，否则扫描型PDF无法正确识别中文内容。
 
-### Poppler 安装
-
-**自动安装（推荐）**：
-```bash
-python download_poppler.py
-```
-
-## 🚀 使用流程
-
-1. **环境准备**
-   ```bash
-   pip install -r requirements.txt
-   python test_config.py  # 检查依赖
-   ```
-
-2. **准备数据**
-   ```bash
-   # 将PDF文件放入pdfs目录
-   cp your_files.pdf pdfs/
-   ```
-
-3. **开始处理**
-   ```bash
-   python main.py
-   ```
