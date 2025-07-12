@@ -1,0 +1,29 @@
+# 排除PDF文件（通常包含敏感数据）
+pdfs/*.pdf
+
+poppler/
+
+# 排除Python缓存
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# 排除IDE文件
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 排除临时文件
+*.tmp
+*.temp
+
+# 排除导出的数据文件
+*.csv
+*.xlsx
+
+# 排除环境变量文件
+.env
