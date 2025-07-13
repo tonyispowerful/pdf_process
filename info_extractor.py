@@ -27,8 +27,8 @@ BIDDING_SCHEMA = [
 
 TENDER_SCHEMA = [
     # 投标文件专用字段
-    "项目名称", "投标单位", "法定代表人", "联系人", 
-    "联系电话", "联系邮箱", "投标报价", "投标截止时间",
+    "项目名称", "投标单位", "采购代理机构", "法定代表人", "投标单位联系人", 
+    "投标单位联系电话", "投标单位联系邮箱", "投标报价", "投标截止时间",
     "投标时间", "报价时间", "项目编号", "企业资质", "项目开始时间",
     "项目工期", "投入设备"
 ]
@@ -156,9 +156,9 @@ def extract_info(text, file_type):
         info["法定代表人"] = find_first(text, r"(法定代表人|法人代表)[:：]?\s*(.+?)\s", group=2)
 
         # 投标者联系方式
-        info["联系人"] = find_first(text, r"(联系人|项目负责人)[:：]?\s*(.+?)\s", group=2)
-        info["联系电话"] = find_first(text, r"(1[3-9]\d{9})")
-        info["联系邮箱"] = find_first(text, r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+")
+        info["投标单位联系人"] = find_first(text, r"(联系人|项目负责人)[:：]?\s*(.+?)\s", group=2)
+        info["投标单位联系电话"] = find_first(text, r"(1[3-9]\d{9})")
+        info["投标单位联系邮箱"] = find_first(text, r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+")
 
         # 金额与时间
         amount_list = extract_amount(text)
