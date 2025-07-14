@@ -19,7 +19,7 @@ except ImportError:
 # 为招标文件和投标文件分别定义 schema
 BIDDING_SCHEMA = [
     # 招标文件专用字段
-    "项目名称", "招标单位名称", "招标单位地址", "代理机构", 
+    "项目名称","招标编号",  "招标单位名称", "招标单位地址", "代理机构", 
     "评分办法", "最高限价", "开标时间", "投标截止时间",
     "项目编号", "招标单位联系人姓名", "招标单位联系电话", "公告发布时间"
 ]
@@ -111,6 +111,17 @@ def extract_entities_with_nlp(text, file_type="通用"):
         print(f"[错误] NLP 实体识别失败: {e}")
         return None
 
+# 创建一个和 schema 顺序一致的有序结果
+def create_ordered_result(data, schema):
+    ordered_result = {}
+    
+    # 按照 schema 顺序添加字段
+    for field in schema:
+        if field in data and data[field] is not None:
+            ordered_result[field] = data[field]
+    
+    return ordered_result
+
 # 增强版信息提取：优先使用 NLP, 正则表达式作为补充
 def extract_info_enhanced(text, file_type):
     # 使用 NLP 方法
@@ -139,11 +150,14 @@ def extract_info_enhanced(text, file_type):
         
         enhanced_info = standardize_amounts_in_result(enhanced_info)
         
+        enhanced_info = create_ordered_result(enhanced_info, current_schema)
+        
         return enhanced_info
     else:
         # 如果 NLP 不可用，返回正则表达式结果
         result = regex_result
         result = standardize_amounts_in_result(result)
+        result = create_ordered_result(result, get_schema_by_file_type(file_type))
         return result
       
 # 传统正则表达式信息提取
@@ -188,7 +202,9 @@ def extract_info(text, file_type):
         info["招标单位联系人"] = find_first(text, r"(招标单位联系人|联系人)[:：]?\s*(.+?)\s", group=2)
         info["招标单位联系电话"] = find_first(text, r"(招标单位联系电话|联系电话)[:：]?\s*(1[3-9]\d{9})", group=2)
 
-    return info
+    current_schema = get_schema_by_file_type(file_type)
+    
+    return create_ordered_result(info, current_schema)
 
 # 标准化结果中的金额字段为阿拉伯数字
 def standardize_amounts_in_result(info):

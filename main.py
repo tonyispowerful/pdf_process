@@ -18,9 +18,9 @@ def determine_file_type(file_name, text_preview=""):
     
     # 基于内容判断（如果文件名不明确）
     if text_preview:
-        if any(keyword in text_preview[:1000] for keyword in ["招标公告", "采购公告", "最高限价"]):
+        if any(keyword in text_preview[:10000] for keyword in ["招标文件", "招标公告", "采购公告", "最高限价"]):
             return "招标文件"
-        elif any(keyword in text_preview[:1000] for keyword in ["投标人", "投标报价", "响应文件"]):
+        elif any(keyword in text_preview[:10000] for keyword in ["投标文件", "投标书", "投标人", "投标报价", "响应文件"]):
             return "投标文件"
     
     # 默认返回类型为通用
@@ -133,6 +133,6 @@ def process_pdfs():
 if __name__ == "__main__":
     process_pdfs()
     # 处理完成后，可以在数据库中查看提取结果, 也可以导出为 Excel 文件
-    from db_manager import export_to_csv
-    export_to_csv()
+    from db_manager import export_to_excel
+    export_to_excel("标书数据.xlsx")
 
