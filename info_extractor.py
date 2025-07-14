@@ -153,7 +153,7 @@ def extract_info(text, file_type):
     if file_type == "投标文件":
         # 基本信息
         info["项目名称"] = find_first(text, r"项目名称[:：]?\s*(.+?)\s")
-        info["投标单位"] = find_first(text, r"(投标人|投标单位|响应单位)[:：]?\s*(.+?)\s", group=2)
+        info["投标单位名称"] = find_first(text, r"(投标人|投标单位|响应单位)[:：]?\s*(.+?)\s", group=2)
         info["法定代表人"] = find_first(text, r"(法定代表人|法人代表)[:：]?\s*(.+?)\s", group=2)
 
         # 投标者联系方式
