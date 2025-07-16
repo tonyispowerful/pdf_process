@@ -2,12 +2,11 @@ import os
 from datetime import datetime
 from config import PDF_FOLDER
 from pdf_reader import extract_pdf_text
-from info_extractor import extract_info_enhanced
 from db_manager import insert_bid_data, bid_exists
+import re
 
 from utils import (
-    extract_date, extract_amount, preprocess_text_for_nlp, 
-    find_first
+    extract_amount, preprocess_text_for_nlp, 
 )
 
 # 忽略 FutureWarning 警告
@@ -19,8 +18,8 @@ try:
     from paddlenlp import Taskflow
     PADDLENLP_AVAILABLE = True
 except ImportError:
-    print("[警告] PaddleNLP 未安装，将使用传统正则表达式方法")
-    PADDLENLP_AVAILABLE = False
+    print("[警告] PaddleNLP 未安装，请确保已安装 PaddleNLP 库")
+    raise ImportError("PaddleNLP 库未安装，请先安装 PaddleNLP")
 
 
 # 为招标文件和投标文件分别定义 schema
@@ -32,18 +31,24 @@ BIDDING_SCHEMA = [
 ]
 
 TENDER_SCHEMA = [
-    # 投标文件专用字段
+    # 投标文件专用字段 - 简单实体
     "项目名称", "投标单位名称", "采购代理机构", "法定代表人", "投标单位联系人姓名", 
     "投标单位联系电话", "投标单位联系邮箱", "投标报价", "投标截止时间",
     "投标时间", "报价时间", "项目编号", "企业资质", "项目开始时间",
     "项目工期", "项目人数", "负责人职务", "负责人资质", "高级职称人员数量", "中级职称人员数量", "低级职称人员数量",
-    "投入设备", "投入资金", "进度管理方案", "巡查考核方案", "质量保证方案", "施工标准",
-    "安全保障", "应急预案", "服务承诺", "沟通配合措施", "安全文明建设", "制度建设", "资料整编方案"
+    "投入设备", "投入资金"
+]
+
+# 定义需要提取详细内容的复杂字段
+COMPLEX_CONTENT_SCHEMA = [
+    "进度管理方案", "巡查考核方案", "质量保证方案", "施工标准",
+    "安全保障", "应急预案", "服务承诺", "沟通配合措施", 
+    "安全文明建设", "制度建设", "资料整编方案"
 ]
 
 
 # 全量字段（合并所有 schema, 通用）
-ALL_SCHEMA = list(set(BIDDING_SCHEMA + TENDER_SCHEMA))
+ALL_SCHEMA = list(set(BIDDING_SCHEMA + TENDER_SCHEMA + COMPLEX_CONTENT_SCHEMA))
 
 ie_models = {}
 
@@ -56,8 +61,9 @@ if PADDLENLP_AVAILABLE:
                                        model='uie-medium', 
                                        schema_lang='zh')
         
+        tender_full_schema = TENDER_SCHEMA + COMPLEX_CONTENT_SCHEMA
         ie_models["投标文件"] = Taskflow("information_extraction", 
-                                       schema=TENDER_SCHEMA, 
+                                       schema=tender_full_schema, 
                                        model='uie-medium', 
                                        schema_lang='zh')
         ie_models["通用"] = Taskflow("information_extraction", 
@@ -74,7 +80,7 @@ if PADDLENLP_AVAILABLE:
 def get_schema_by_file_type(file_type):
     schema_mapping = {
         "招标文件": BIDDING_SCHEMA,
-        "投标文件": TENDER_SCHEMA,
+        "投标文件": TENDER_SCHEMA + COMPLEX_CONTENT_SCHEMA,
     }
     return schema_mapping.get(file_type, ALL_SCHEMA)
   
@@ -111,108 +117,119 @@ def extract_entities_with_nlp(text, file_type="通用"):
         # 格式化结果
         for key in current_schema:
             spans = result.get(key, [])
-            record_dict[key] = [{"span": item["text"]} for item in spans] if spans else []
+            if key in COMPLEX_CONTENT_SCHEMA:
+                # 对于复杂内容字段，提取所有相关文本并合并
+                if spans:
+                    # 合并所有提取的文本片段
+                    all_text = []
+                    for item in spans:
+                        text_content = item.get("text", "")
+                        if text_content and len(text_content.strip()) > 10:  # 过滤过短的文本
+                            all_text.append(text_content.strip())
+                    
+                    # 如果没有足够的内容，尝试基于关键词搜索
+                    if not all_text:
+                        extracted_content = extract_content_by_keyword(processed_text, key)
+                        if extracted_content:
+                            all_text = [extracted_content]
+                    
+                    record_dict[key] = [{"span": "\n".join(all_text)}] if all_text else []
+                else:
+                    # 如果NLP没有识别出来，尝试基于关键词提取
+                    extracted_content = extract_content_by_keyword(processed_text, key)
+                    record_dict[key] = [{"span": extracted_content}] if extracted_content else []
+            else:
+                # 简单字段保持原有逻辑
+                record_dict[key] = [{"span": item["text"]} for item in spans] if spans else []
         
         return {"records": record_dict, "file_type": file_type}
     except Exception as e:
         print(f"[错误] NLP 实体识别失败: {e}")
         return None
 
+# 基于字段名称从文本中提取相关段落内容
+def extract_content_by_keyword(text, field_name):
+    """
+    基于字段名称从文本中提取相关段落内容
+    """
+    # 定义关键词映射
+    keyword_mapping = {
+        "质量保证方案": ["质量保证", "质量管理", "质量控制", "质量方案", "质量措施"],
+        "安全保障": ["安全保障", "安全措施", "安全管理", "安全防护", "安全方案"],
+        "进度管理方案": ["进度管理", "进度控制", "进度安排", "时间安排", "工期管理"],
+        "应急预案": ["应急预案", "应急处理", "应急措施", "突发事件", "应急响应"],
+        "服务承诺": ["服务承诺", "服务保证", "服务质量", "服务标准"],
+        "施工标准": ["施工标准", "施工规范", "施工要求", "技术标准", "作业标准"],
+        "巡查考核方案": ["巡查", "考核", "检查", "监督", "评估"],
+        "沟通配合措施": ["沟通配合", "协调", "配合", "沟通机制"],
+        "安全文明建设": ["安全文明", "文明施工", "现场管理"],
+        "制度建设": ["制度建设", "管理制度", "规章制度", "制度完善"],
+        "资料整编方案": ["资料整编", "资料管理", "档案管理", "文档整理"]
+    }
+    
+    keywords = keyword_mapping.get(field_name, [field_name])
+    
+    # 按段落分割文本
+    paragraphs = re.split(r'\n\s*\n', text)
+    
+    relevant_content = []
+    
+    for paragraph in paragraphs:
+        paragraph = paragraph.strip()
+        if len(paragraph) < 20:  # 跳过过短的段落
+            continue
+            
+        # 检查段落是否包含相关关键词
+        for keyword in keywords:
+            if keyword in paragraph:
+                relevant_content.append(paragraph)
+                break
+    
+    # 如果找到相关内容，返回合并后的文本
+    if relevant_content:
+        return "\n\n".join(relevant_content[:3])  # 最多返回3个相关段落
+    
+    return None
+
+
 # 创建一个和 schema 顺序一致的有序结果
 def create_ordered_result(data, schema):
     ordered_result = {}
     
-    # 按照 schema 顺序添加字段
+    # 按照 schema 顺序添加字段，包括 None 值
     for field in schema:
-        if field in data and data[field] is not None:
-            ordered_result[field] = data[field]
+        ordered_result[field] = data.get(field, None)
     
     return ordered_result
 
-# 增强版信息提取：优先使用 NLP, 正则表达式作为补充
-def extract_info_enhanced(text, file_type):
+# nlp 信息提取
+def extract_info(text, file_type):
     # 使用 NLP 方法
     nlp_result = extract_entities_with_nlp(text, file_type)
     
-    # 正则表达式方法作为备选
-    regex_result = extract_info(text, file_type)
+    # 获取当前文件类型对应的 schema
+    current_schema = get_schema_by_file_type(file_type)
     
-    # 合并结果
+    enhanced_info = {}
+    
+    # 初始化所有schema字段为空值
+    for field in current_schema:
+        enhanced_info[field] = None
+    
     if nlp_result and nlp_result["records"]:
-        enhanced_info = {}
         records = nlp_result["records"]
         
-        # 获取当前文件类型对应的 schema
-        current_schema = get_schema_by_file_type(file_type)
-        
-        # 从 NLP 结果中提取第一个匹配项
+        # 从 NLP 结果中提取第一个匹配项，覆盖对应字段
         for field in current_schema:
             if field in records and records[field]:
                 enhanced_info[field] = records[field][0]["span"]
-        
-        # 用正则表达式结果补充缺失的字段
-        for key, value in regex_result.items():
-            if key not in enhanced_info or not enhanced_info[key]:
-                enhanced_info[key] = value
-        
-        enhanced_info = standardize_amounts_in_result(enhanced_info)
-        
-        enhanced_info = create_ordered_result(enhanced_info, current_schema)
-        
-        return enhanced_info
-    else:
-        # 如果 NLP 不可用，返回正则表达式结果
-        result = regex_result
-        result = standardize_amounts_in_result(result)
-        result = create_ordered_result(result, get_schema_by_file_type(file_type))
-        return result
-      
-# 传统正则表达式信息提取
-def extract_info(text, file_type):
-    info = {}
-
-    if file_type == "投标文件":
-        # 基本信息
-        info["项目名称"] = find_first(text, r"项目名称[:：]?\s*(.+?)\s")
-        info["投标单位名称"] = find_first(text, r"(投标人|投标单位|响应单位)[:：]?\s*(.+?)\s", group=2)
-        info["法定代表人"] = find_first(text, r"(法定代表人|法人代表)[:：]?\s*(.+?)\s", group=2)
-
-        # 投标者联系方式
-        info["投标单位联系人"] = find_first(text, r"(联系人|项目负责人)[:：]?\s*(.+?)\s", group=2)
-        info["投标单位联系电话"] = find_first(text, r"(1[3-9]\d{9})")
-        info["投标单位联系邮箱"] = find_first(text, r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+")
-
-        # 金额与时间
-        amount_list = extract_amount(text)
-        info["投标报价"] = amount_list[0] if amount_list else None
-        info["投标截止时间"] = extract_date(text)
-        info["投标时间"] = find_first(text, r"(投标时间|提交时间)[:：]?\s*(\d{4}[-/年]\d{1,2}[-/月]\d{1,2}日?)", group=2)
-        info["报价时间"] = find_first(text, r"(报价时间)[:：]?\s*(\d{4}[-/年]\d{1,2}[-/月]\d{1,2}日?)", group=2)
-
-    elif file_type == "招标文件":
-        # 招标文件字段提取
-        info["项目名称"] = find_first(text, r"项目名称[:：]?\s*(.+?)\s")
-        info["采购人名称"] = find_first(text, r"(采购人|招标人|买方)[:：]?\s*(.+?)\s", group=2)
-        info["采购人地址"] = find_first(text, r"(采购人地址|联系地址)[:：]?\s*(.+?)\s", group=2)
-        info["代理机构"] = find_first(text, r"(代理机构|招标代理)[:：]?\s*(.+?)\s", group=2)
-        info["评分办法"] = find_first(text, r"(评分办法|评标方法|评分标准)[:：]?\s*(.+?)\s", group=2)
-
-        # 金额与时间
-        amount_list = extract_amount(text)
-        info["最高限价"] = amount_list[0] if amount_list else None
-        info["开标时间"] = find_first(text, r"(开标时间)[:：]?\s*(.+?)\s", group=2)
-        info["投标截止时间"] = find_first(text, r"(投标截止时间)[:：]?\s*(.+?)\s", group=2)
-        
-        # 招标单位信息
-        info["招标单位名称"] = find_first(text, r"(招标单位|招标人)[:：]?\s*(.+?)\s", group=2)
-        info["招标单位地址"] = find_first(text, r"(招标单位地址|招标人地址)[:：]?\s*(.+?)\s", group=2)
-        info["招标单位联系人"] = find_first(text, r"(招标单位联系人|联系人)[:：]?\s*(.+?)\s", group=2)
-        info["招标单位联系电话"] = find_first(text, r"(招标单位联系电话|联系电话)[:：]?\s*(1[3-9]\d{9})", group=2)
-
-    current_schema = get_schema_by_file_type(file_type)
     
-    return create_ordered_result(info, current_schema)
-
+    enhanced_info = standardize_amounts_in_result(enhanced_info)
+    
+    enhanced_info = create_ordered_result(enhanced_info, current_schema)
+    
+    return enhanced_info
+      
 # 标准化结果中的金额字段为阿拉伯数字
 def standardize_amounts_in_result(info):
     # 需要标准化的金额字段
@@ -231,21 +248,6 @@ def standardize_amounts_in_result(info):
             if converted_amounts and len(converted_amounts) > 0:
                 # 取第一个有效金额
                 info[field] = converted_amounts[0]
-            else:
-                # 如果 extract_amount 失败，尝试简单的数字提取
-                import re
-                numbers = re.findall(r'(\d+(?:\.\d+)?)', amount_text)
-                if numbers:
-                    try:
-                        base_amount = float(numbers[0])
-                        # 检查是否包含"万"
-                        if '万' in amount_text:
-                            info[field] = base_amount * 10000
-                        else:
-                            info[field] = base_amount
-                    except ValueError:
-                        # 转换失败，保持原值
-                        pass
     
     return info
 
@@ -325,8 +327,8 @@ def process_pdfs():
             print(f"  - 文件类型: {file_type}")
 
             # 进行信息提取
-            print("  - 提取结构化信息...")
-            info = extract_info_enhanced(text, file_type)
+            print("  - 提取结构化信息... 提取时间可能较长")
+            info = extract_info(text, file_type)
             
             if not info:
                 print(f"[错误] {file_name} 信息提取失败")
