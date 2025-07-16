@@ -17,9 +17,9 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 try:
     from paddlenlp import Taskflow
     PADDLENLP_AVAILABLE = True
-except ImportError:
-    print("[警告] PaddleNLP 未安装，请确保已安装 PaddleNLP 库")
-    raise ImportError("PaddleNLP 库未安装，请先安装 PaddleNLP")
+except ImportError as e:
+    print(f"[错误] PaddleNLP 未安装，请确保已安装 PaddleNLP 库: {e}")
+    PADDLENLP_AVAILABLE = False
 
 
 # 为招标文件和投标文件分别定义 schema
