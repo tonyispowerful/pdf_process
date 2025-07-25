@@ -31,7 +31,7 @@ BIDDING_SCHEMA = [
 ]
 
 TENDER_SCHEMA = [
-    # 投标文件专用字段 - 简单实体
+    # 投标文件专用字段
     "项目名称", "投标单位名称", "采购代理机构", "法定代表人", "投标单位联系人姓名", 
     "投标单位联系电话", "投标单位联系邮箱", "投标报价", "投标截止时间",
     "投标时间", "报价时间", "项目编号", "企业资质", "项目开始时间",
@@ -39,16 +39,8 @@ TENDER_SCHEMA = [
     "投入设备", "投入资金"
 ]
 
-# 定义需要提取详细内容的复杂字段
-COMPLEX_CONTENT_SCHEMA = [
-    "进度管理方案", "巡查考核方案", "质量保证方案", "施工标准",
-    "安全保障", "应急预案", "服务承诺", "沟通配合措施", 
-    "安全文明建设", "制度建设", "资料整编方案"
-]
-
-
 # 全量字段（合并所有 schema, 通用）
-ALL_SCHEMA = list(set(BIDDING_SCHEMA + TENDER_SCHEMA + COMPLEX_CONTENT_SCHEMA))
+ALL_SCHEMA = list(set(BIDDING_SCHEMA + TENDER_SCHEMA))
 
 ie_models = {}
 
@@ -61,7 +53,7 @@ if PADDLENLP_AVAILABLE:
                                        model='uie-medium', 
                                        schema_lang='zh')
         
-        tender_full_schema = TENDER_SCHEMA + COMPLEX_CONTENT_SCHEMA
+        tender_full_schema = TENDER_SCHEMA
         ie_models["投标文件"] = Taskflow("information_extraction", 
                                        schema=tender_full_schema, 
                                        model='uie-medium', 
@@ -80,7 +72,7 @@ if PADDLENLP_AVAILABLE:
 def get_schema_by_file_type(file_type):
     schema_mapping = {
         "招标文件": BIDDING_SCHEMA,
-        "投标文件": TENDER_SCHEMA + COMPLEX_CONTENT_SCHEMA,
+        "投标文件": TENDER_SCHEMA,
     }
     return schema_mapping.get(file_type, ALL_SCHEMA)
   
@@ -117,79 +109,13 @@ def extract_entities_with_nlp(text, file_type="通用"):
         # 格式化结果
         for key in current_schema:
             spans = result.get(key, [])
-            if key in COMPLEX_CONTENT_SCHEMA:
-                # 对于复杂内容字段，提取所有相关文本并合并
-                if spans:
-                    # 合并所有提取的文本片段
-                    all_text = []
-                    for item in spans:
-                        text_content = item.get("text", "")
-                        if text_content and len(text_content.strip()) > 10:  # 过滤过短的文本
-                            all_text.append(text_content.strip())
-                    
-                    # 如果没有足够的内容，尝试基于关键词搜索
-                    if not all_text:
-                        extracted_content = extract_content_by_keyword(processed_text, key)
-                        if extracted_content:
-                            all_text = [extracted_content]
-                    
-                    record_dict[key] = [{"span": "\n".join(all_text)}] if all_text else []
-                else:
-                    # 如果NLP没有识别出来，尝试基于关键词提取
-                    extracted_content = extract_content_by_keyword(processed_text, key)
-                    record_dict[key] = [{"span": extracted_content}] if extracted_content else []
-            else:
-                # 简单字段保持原有逻辑
-                record_dict[key] = [{"span": item["text"]} for item in spans] if spans else []
+            # 简单字段保持原有逻辑
+            record_dict[key] = [{"span": item["text"]} for item in spans] if spans else []
         
         return {"records": record_dict, "file_type": file_type}
     except Exception as e:
         print(f"[错误] NLP 实体识别失败: {e}")
         return None
-
-# 基于字段名称从文本中提取相关段落内容
-def extract_content_by_keyword(text, field_name):
-    """
-    基于字段名称从文本中提取相关段落内容
-    """
-    # 定义关键词映射
-    keyword_mapping = {
-        "质量保证方案": ["质量保证", "质量管理", "质量控制", "质量方案", "质量措施"],
-        "安全保障": ["安全保障", "安全措施", "安全管理", "安全防护", "安全方案"],
-        "进度管理方案": ["进度管理", "进度控制", "进度安排", "时间安排", "工期管理"],
-        "应急预案": ["应急预案", "应急处理", "应急措施", "突发事件", "应急响应"],
-        "服务承诺": ["服务承诺", "服务保证", "服务质量", "服务标准"],
-        "施工标准": ["施工标准", "施工规范", "施工要求", "技术标准", "作业标准"],
-        "巡查考核方案": ["巡查", "考核", "检查", "监督", "评估"],
-        "沟通配合措施": ["沟通配合", "协调", "配合", "沟通机制"],
-        "安全文明建设": ["安全文明", "文明施工", "现场管理"],
-        "制度建设": ["制度建设", "管理制度", "规章制度", "制度完善"],
-        "资料整编方案": ["资料整编", "资料管理", "档案管理", "文档整理"]
-    }
-    
-    keywords = keyword_mapping.get(field_name, [field_name])
-    
-    # 按段落分割文本
-    paragraphs = re.split(r'\n\s*\n', text)
-    
-    relevant_content = []
-    
-    for paragraph in paragraphs:
-        paragraph = paragraph.strip()
-        if len(paragraph) < 20:  # 跳过过短的段落
-            continue
-            
-        # 检查段落是否包含相关关键词
-        for keyword in keywords:
-            if keyword in paragraph:
-                relevant_content.append(paragraph)
-                break
-    
-    # 如果找到相关内容，返回合并后的文本
-    if relevant_content:
-        return "\n\n".join(relevant_content[:3])  # 最多返回3个相关段落
-    
-    return None
 
 
 # 创建一个和 schema 顺序一致的有序结果
