@@ -3,6 +3,10 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 from gensim.models import Word2Vec
+from difflib import SequenceMatcher
+import Levenshtein
+from sentence_transformers import SentenceTransformer
+import torch
 
 def tfidf_similarity(text1, text2):
     """使用TF-IDF向量计算余弦相似度"""
@@ -17,8 +21,6 @@ def tfidf_similarity(text1, text2):
 
 def word2vec_similarity(text1, text2):
     """使用Word2Vec计算语义相似度"""
-
-    
     sentences1 = [list(jieba.cut(text1))]
     sentences2 = [list(jieba.cut(text2))]
     
@@ -37,12 +39,6 @@ def word2vec_similarity(text1, text2):
     
     return cosine_similarity([vec1], [vec2])[0][0]
   
-  
-  
-  
-from difflib import SequenceMatcher
-import Levenshtein
-
 def levenshtein_similarity(text1, text2):
     """计算编辑距离相似度"""
     distance = Levenshtein.distance(text1, text2)
@@ -56,11 +52,6 @@ def sequence_similarity(text1, text2):
 def jaro_winkler_similarity(text1, text2):
     """Jaro-Winkler相似度"""
     return Levenshtein.jaro_winkler(text1, text2)
-  
-  
-  
-  
-  
   
 def ngram_similarity(text1, text2, n=3):
     """N-gram相似度检测"""
@@ -89,8 +80,6 @@ def shingling_similarity(text1, text2, k=5):
   
   
   # 使用BERT等预训练模型
-from sentence_transformers import SentenceTransformer
-import torch
 
 def bert_similarity(text1, text2):
     """使用BERT计算语义相似度"""
@@ -102,7 +91,6 @@ def bert_similarity(text1, text2):
         torch.tensor(embeddings[1]).unsqueeze(0)
     )
     return similarity.item()
-  
   
 def structure_similarity(text1, text2):
     """基于文档结构的相似度"""
@@ -136,15 +124,14 @@ def structure_similarity(text1, text2):
 from db_manager import get_all_data, get_bidding_files, get_tender_files, get_data_by_company
 
 
-
 class AdvancedSimilarityDetector:
     def __init__(self):
         self.methods = {
-            'tfidf': self.tfidf_similarity,
-            'levenshtein': self.levenshtein_similarity,
-            'ngram': self.ngram_similarity,
-            'structure': self.structure_similarity,
-            'bert': self.bert_similarity
+            'tfidf': tfidf_similarity,
+            'levenshtein': levenshtein_similarity,
+            'ngram': ngram_similarity,
+            'structure': structure_similarity,
+            'bert': bert_similarity
         }
         self.weights = {
             'tfidf': 0.3,
@@ -190,7 +177,6 @@ class AdvancedSimilarityDetector:
                 doc_info.append({
                     'file_name': doc.get('文件名', 'unknown'),
                     'file_type': doc.get('文件类型', 'unknown'),
-                    'company': doc.get('投标公司名称', 'unknown')
                 })
         
         # 批量检测相似度
@@ -354,16 +340,26 @@ class AdvancedSimilarityDetector:
         report.append("")
         
         # 详细结果
-        if all_similar:
-            report.append("3. 详细相似度结果:")
-            for i, result in enumerate(all_similar[:10], 1):  # 只显示前10个
-                report.append(f"   {i}. {result['doc1']['file_name']} <-> {result['doc2']['file_name']}")
-                report.append(f"      相似度: {result['similarity_score']:.3f}")
+        report.append("3. 详细相似度结果:")
+        if isinstance(all_similar, list) and len(all_similar) > 0:
+            for i, result in enumerate(all_similar[:3], 1):  # 只显示前3个
+                doc1_name = result.get('doc1', {}).get('file_name', '未知文档')
+                doc2_name = result.get('doc2', {}).get('file_name', '未知文档')
+                score = result.get('similarity_score', 0)
+                
+                report.append(f"   {i}. {doc1_name} <-> {doc2_name}")
+                report.append(f"      相似度: {score:.3f}")
                 report.append("")
+        elif isinstance(all_similar, dict) and 'message' in all_similar:
+            report.append(f"   {all_similar['message']}")
+            report.append("")
+        else:
+            report.append("   暂无相似文档发现")
+            report.append("")
         
-        # 保存报告
-        #with open(output_file, 'w', encoding='utf-8') as f:
-            #f.write('\n'.join(report))
+        #保存报告
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(report))
         
         return {
             'report_file': output_file,
