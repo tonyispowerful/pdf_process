@@ -7,6 +7,16 @@ from difflib import SequenceMatcher
 import Levenshtein
 from sentence_transformers import SentenceTransformer
 import torch
+import os
+import warnings
+
+# 禁用特定警告
+warnings.filterwarnings("ignore", category=UserWarning, module="huggingface_hub")
+warnings.filterwarnings("ignore", category=FutureWarning, module="torch")
+
+# 设置环境变量禁用symlinks警告
+os.environ['HF_HUB_DISABLE_SYMLINKS_WARNING'] = '1'
+
 
 def tfidf_similarity(text1, text2):
     """使用TF-IDF向量计算余弦相似度"""
@@ -119,29 +129,41 @@ def structure_similarity(text1, text2):
     return np.mean(similarities) if similarities else 0
   
   
-  
-  
-from db_manager import get_all_data, get_bidding_files, get_tender_files, get_data_by_company
+from db_manager import get_unique_data, get_tender_files
 
 
 class AdvancedSimilarityDetector:
     def __init__(self):
         self.methods = {
             'tfidf': tfidf_similarity,
+            'word2vec': word2vec_similarity,       
             'levenshtein': levenshtein_similarity,
+            'sequence': sequence_similarity,      
+            'jaro_winkler': jaro_winkler_similarity, 
             'ngram': ngram_similarity,
-            'structure': structure_similarity,
-            'bert': bert_similarity
+            'shingling': shingling_similarity,    
+            'bert': bert_similarity,
+            'structure': structure_similarity
         }
+      
         self.weights = {
-            'tfidf': 0.3,
-            'levenshtein': 0.2,
-            'ngram': 0.2,
-            'structure': 0.1,
-            'bert': 0.2
+            'tfidf': 0.20,
+            'word2vec': 0.15,
+            'levenshtein': 0.10,
+            'sequence': 0.05,
+            'jaro_winkler': 0.05,
+            'ngram': 0.15,
+            'shingling': 0.10,
+            'bert': 0.15,
+            'structure': 0.05
         }
     
-    def comprehensive_similarity(self, text1, text2, methods=['tfidf', 'levenshtein', 'ngram']):
+    def _get_current_time(self):
+      """获取当前时间"""
+      from datetime import datetime
+      return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+  
+    def comprehensive_similarity(self, text1, text2, methods=['tfidf', 'word2vec','levenshtein', 'levenshtein', 'sequence', 'sequence', 'jaro_winkler', 'ngram', 'shingling', 'bert', 'structure']):
         """综合多种方法计算相似度"""
         scores = {}
         for method in methods:
@@ -162,9 +184,10 @@ class AdvancedSimilarityDetector:
             'is_similar': weighted_score > 0.7  # 阈值可调
         }
 
-    def detect_similar_documents(self, threshold=0.7, methods=['tfidf', 'levenshtein', 'ngram']):
+    def detect_similar_documents(self, threshold=0.5, methods=['tfidf', 'word2vec','levenshtein', 'levenshtein', 'sequence', 'sequence', 'jaro_winkler', 'ngram', 'shingling', 'bert', 'structure']):
         """检测数据库中所有文档的相似度"""
-        all_data = get_all_data()
+        all_data = get_unique_data()
+        print(f"共有{len(all_data)}个文件")
         if len(all_data) < 2:
             return {"message": "数据库中文档数量不足，无法进行相似度检测"}
         
@@ -172,8 +195,8 @@ class AdvancedSimilarityDetector:
         documents = []
         doc_info = []
         for doc in all_data:
-            if 'text' in doc and doc['text']:
-                documents.append(doc['text'])
+            if '原始文本' in doc and doc['原始文本']:
+                documents.append(doc['原始文本'])
                 doc_info.append({
                     'file_name': doc.get('文件名', 'unknown'),
                     'file_type': doc.get('文件类型', 'unknown'),
@@ -186,6 +209,7 @@ class AdvancedSimilarityDetector:
                 similarity_result = self.comprehensive_similarity(
                     documents[i], documents[j], methods
                 )
+                print(f"Comparing {doc_info[i]['file_name']} with {doc_info[j]['file_name']} similarity: {similarity_result['overall_similarity']:.4f}")
                 
                 if similarity_result['overall_similarity'] > threshold:
                     results.append({
@@ -211,10 +235,10 @@ class AdvancedSimilarityDetector:
             for j in range(i+1, len(tender_files)):
                 doc1 = tender_files[i]
                 doc2 = tender_files[j]
-                
-                if doc1.get('content') and doc2.get('content'):
+
+                if doc1.get('原始文本') and doc2.get('原始文本'):
                     similarity = self.comprehensive_similarity(
-                        doc1['content'], doc2['content']
+                        doc1['原始文本'], doc2['原始文本']
                     )
                     
                     if similarity['overall_similarity'] > threshold:
@@ -287,86 +311,209 @@ class AdvancedSimilarityDetector:
         similarities.sort(key=lambda x: x['similarity_score'], reverse=True)
         return similarities[:top_n]
     
-    def company_similarity_analysis(self, company_name, threshold=0.6):
-        """分析某公司文档的内部相似度"""
-        company_docs = get_data_by_company(company_name)
-        
-        if len(company_docs) < 2:
-            return {"message": f"公司 {company_name} 的文档数量不足"}
-        
-        results = []
-        for i in range(len(company_docs)):
-            for j in range(i+1, len(company_docs)):
-                doc1, doc2 = company_docs[i], company_docs[j]
-                
-                if doc1.get('content') and doc2.get('content'):
-                    similarity = self.comprehensive_similarity(
-                        doc1['content'], doc2['content']
-                    )
-                    
-                    if similarity['overall_similarity'] > threshold:
-                        results.append({
-                            'file1': doc1.get('文件名'),
-                            'file2': doc2.get('文件名'),
-                            'similarity_score': similarity['overall_similarity'],
-                            'analysis': self._analyze_similarity_pattern(similarity)
-                        })
-        
-        return {
-            'company': company_name,
-            'total_documents': len(company_docs),
-            'similar_pairs': len(results),
-            'similarity_details': results
-        }
-    
     def generate_similarity_report(self, output_file='similarity_report.txt'):
-        """生成完整的相似度检测报告"""
-        report = []
-        report.append("=" * 50)
-        report.append("文档相似度检测报告")
-        report.append("=" * 50)
-        report.append("")
-        
-        # 总体相似度检测
-        all_similar = self.detect_similar_documents(threshold=0.6)
-        report.append(f"1. 总体相似度检测 (阈值: 0.6)")
-        report.append(f"   发现 {len(all_similar)} 对相似文档")
-        report.append("")
-        
-        # 投标抄袭检测
-        plagiarism = self.detect_bidding_plagiarism(threshold=0.7)
-        report.append(f"2. 投标抄袭检测 (阈值: 0.7)")
-        report.append(f"   发现 {len(plagiarism)} 对可能抄袭的投标文件")
-        report.append("")
-        
-        # 详细结果
-        report.append("3. 详细相似度结果:")
-        if isinstance(all_similar, list) and len(all_similar) > 0:
-            for i, result in enumerate(all_similar[:3], 1):  # 只显示前3个
-                doc1_name = result.get('doc1', {}).get('file_name', '未知文档')
-                doc2_name = result.get('doc2', {}).get('file_name', '未知文档')
-                score = result.get('similarity_score', 0)
-                
-                report.append(f"   {i}. {doc1_name} <-> {doc2_name}")
-                report.append(f"      相似度: {score:.3f}")
-                report.append("")
-        elif isinstance(all_similar, dict) and 'message' in all_similar:
-            report.append(f"   {all_similar['message']}")
-            report.append("")
-        else:
-            report.append("   暂无相似文档发现")
-            report.append("")
-        
-        #保存报告
-        with open(output_file, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(report))
-        
-        return {
-            'report_file': output_file,
-            'total_similar_pairs': len(all_similar),
-            'plagiarism_cases': len(plagiarism)
-        }
-    
+      """生成完整的相似度检测报告"""
+      report = []
+      report.append("=" * 80)
+      report.append("文档相似度检测报告")
+      report.append("=" * 80)
+      report.append("")
+      
+      # 总体相似度检测
+      all_similar = self.detect_similar_documents(threshold=0.6)
+      
+      # 检查 all_similar 类型并处理
+      if isinstance(all_similar, dict) and 'message' in all_similar:
+          report.append(f"1. 所有文档相似度检测 (阈值: 0.6)")
+          report.append(f"   {all_similar['message']}")
+          all_similar_count = 0
+      elif isinstance(all_similar, list):
+          all_similar_count = len(all_similar)
+          report.append(f"1. 所有文档相似度检测 (阈值: 0.6)")
+          report.append(f"   发现 {all_similar_count} 对相似文档")
+      else:
+          all_similar_count = 0
+          report.append(f"1. 所有文档相似度检测 (阈值: 0.6)")
+          report.append(f"   检测结果异常")
+      
+      report.append("")
+      
+      # 投标抄袭检测
+      plagiarism = self.detect_bidding_plagiarism(threshold=0.7)
+      
+      if isinstance(plagiarism, dict) and 'message' in plagiarism:
+          report.append(f"2. 投标抄袭检测 (阈值: 0.7)")
+          report.append(f"   {plagiarism['message']}")
+          plagiarism_count = 0
+      elif isinstance(plagiarism, list):
+          plagiarism_count = len(plagiarism)
+          report.append(f"2. 投标抄袭检测 (阈值: 0.7)")
+          report.append(f"   发现 {plagiarism_count} 对可能抄袭的投标文件")
+      else:
+          plagiarism_count = 0
+          report.append(f"2. 投标抄袭检测 (阈值: 0.7)")
+          report.append(f"   检测结果异常")
+      
+      report.append("")
+      
+      # 详细相似度结果 - 包含所有信息
+      report.append("3. 详细相似度结果:")
+      if isinstance(all_similar, list) and len(all_similar) > 0:
+          for i, result in enumerate(all_similar, 1):  # 显示所有结果，不限制数量
+              try:
+                  # 基本信息
+                  doc1_info = result.get('doc1', {})
+                  doc2_info = result.get('doc2', {})
+                  
+                  doc1_name = doc1_info.get('file_name', '未知文档1')
+                  doc2_name = doc2_info.get('file_name', '未知文档2')
+                  doc1_type = doc1_info.get('file_type', '未知类型')
+                  doc2_type = doc2_info.get('file_type', '未知类型')
+                  
+                  overall_score = result.get('similarity_score', 0)
+                  is_highly_similar = result.get('is_highly_similar', False)
+                  
+                  # 添加分隔线
+                  report.append(f"   {'-' * 60}")
+                  report.append(f"   相似度检测结果 #{i}")
+                  report.append(f"   {'-' * 60}")
+                  
+                  # 文档信息
+                  report.append(f"   文档1: {doc1_name}")
+                  report.append(f"   类型1: {doc1_type}")
+                  report.append(f"   文档2: {doc2_name}")
+                  report.append(f"   类型2: {doc2_type}")
+                  report.append("")
+                  
+                  # 相似度分数
+                  report.append(f"   综合相似度: {overall_score:.4f}")
+                  report.append(f"   高相似度标记: {'是' if is_highly_similar else '否'}")
+                  
+                  # 风险等级评估
+                  if overall_score > 0.9:
+                      risk_level = "极高风险 - 可能存在直接复制"
+                  elif overall_score > 0.8:
+                      risk_level = "高风险 - 需要进一步审查"
+                  elif overall_score > 0.7:
+                      risk_level = "中等风险 - 可能存在参考借鉴"
+                  elif overall_score > 0.5:
+                      risk_level = "低风险 - 属于正常范围"
+                  else:
+                      risk_level = "极低风险 - 内容差异较大"
+                  
+                  report.append(f"   风险评估: {risk_level}")
+                  report.append("")
+                  
+                  # 详细算法分数
+                  detailed_scores = result.get('detailed_scores', {})
+                  if detailed_scores:
+                      report.append("   各算法详细分数:")
+                      for method, score in detailed_scores.items():
+                          method_name = {
+                              'tfidf': 'TF-IDF词频分析',
+                              'levenshtein': 'Levenshtein编辑距离',
+                              'ngram': 'N-gram字符片段',
+                              'structure': '文档结构分析',
+                              'bert': 'BERT语义分析',
+                              'word2vec': 'Word2Vec词向量',
+                              'sequence': '序列相似度',
+                              'jaro_winkler': 'Jaro-Winkler算法',
+                              'shingling': 'Shingling算法'
+                          }.get(method, method)
+                          
+                          report.append(f"     - {method_name}: {score:.4f}")
+                      report.append("")
+                  
+                  # 分析建议
+                  recommendation = self._get_similarity_recommendation(overall_score)
+                  report.append(f"   处理建议: {recommendation}")
+                  report.append("")
+                  
+              except Exception as e:
+                  report.append(f"   结果 #{i}: 数据解析错误 - {str(e)}")
+                  report.append("")
+      
+      elif isinstance(all_similar, dict) and 'message' in all_similar:
+          report.append(f"   {all_similar['message']}")
+          report.append("")
+      else:
+          report.append("   暂无相似文档发现")
+          report.append("")
+      
+      # 投标抄袭详细结果
+      if isinstance(plagiarism, list) and len(plagiarism) > 0:
+          report.append("4. 投标抄袭详细结果:")
+          for i, result in enumerate(plagiarism, 1):
+              try:
+                  company1 = result.get('company1', '未知公司1')
+                  company2 = result.get('company2', '未知公司2')
+                  file1 = result.get('file1', '未知文件1')
+                  file2 = result.get('file2', '未知文件2')
+                  score = result.get('similarity_score', 0)
+                  risk = result.get('plagiarism_risk', 'UNKNOWN')
+                  
+                  report.append(f"   {'-' * 60}")
+                  report.append(f"   抄袭风险检测 #{i}")
+                  report.append(f"   {'-' * 60}")
+                  report.append(f"   公司1: {company1}")
+                  report.append(f"   文件1: {file1}")
+                  report.append(f"   公司2: {company2}")
+                  report.append(f"   文件2: {file2}")
+                  report.append(f"   相似度: {score:.4f}")
+                  report.append(f"   风险等级: {risk}")
+                  report.append("")
+                  
+              except Exception as e:
+                  report.append(f"   抄袭检测 #{i}: 数据解析错误 - {str(e)}")
+                  report.append("")
+      else:
+          report.append("4. 投标抄袭详细结果:")
+          if isinstance(plagiarism, dict) and 'message' in plagiarism:
+              report.append(f"   {plagiarism['message']}")
+          else:
+              report.append("   未发现投标抄袭风险")
+          report.append("")
+      
+      # 统计摘要
+      report.append("=" * 80)
+      report.append("检测统计摘要")
+      report.append("=" * 80)
+      report.append(f"总检测文档对数: {all_similar_count}")
+      report.append(f"发现相似文档对数: {all_similar_count}")
+      report.append(f"投标抄袭风险案例: {plagiarism_count}")
+      
+      if isinstance(all_similar, list) and len(all_similar) > 0:
+          high_risk_count = sum(1 for r in all_similar if r.get('similarity_score', 0) > 0.8)
+          medium_risk_count = sum(1 for r in all_similar if 0.7 <= r.get('similarity_score', 0) <= 0.8)
+          low_risk_count = sum(1 for r in all_similar if r.get('similarity_score', 0) < 0.7)
+          
+          report.append(f"高风险案例 (>0.8): {high_risk_count}")
+          report.append(f"中风险案例 (0.7-0.8): {medium_risk_count}")
+          report.append(f"低风险案例 (<0.7): {low_risk_count}")
+      
+      report.append("")
+      report.append(f"报告生成时间: {self._get_current_time()}")
+      report.append("=" * 80)
+      
+      # 保存报告
+      try:
+          with open(output_file, 'w', encoding='utf-8') as f:
+              f.write('\n'.join(report))
+          print(f"✓ 详细报告已保存到: {output_file}")
+          print(f"  包含 {all_similar_count} 对相似文档的完整信息")
+          print(f"  包含 {plagiarism_count} 个抄袭风险案例")
+      except Exception as e:
+          print(f"⚠ 报告保存失败: {e}")
+      
+      return {
+          'report_file': output_file,
+          'total_similar_pairs': all_similar_count,
+          'plagiarism_cases': plagiarism_count,
+          'report_content': '\n'.join(report),
+          'detailed_results': all_similar if isinstance(all_similar, list) else [],
+          'plagiarism_results': plagiarism if isinstance(plagiarism, list) else []
+      }
+
     def _get_similarity_recommendation(self, score):
         """根据相似度分数给出建议"""
         if score > 0.9:
@@ -394,27 +541,29 @@ class AdvancedSimilarityDetector:
         
         return patterns if patterns else ["一般相似"]
 
-
-# 便捷函数
-def quick_similarity_check(threshold=0.7):
-    """快速相似度检查"""
-    detector = AdvancedSimilarityDetector()
-    return detector.detect_similar_documents(threshold)
-
-def check_plagiarism():
-    """快速抄袭检查"""
-    detector = AdvancedSimilarityDetector()
-    return detector.detect_bidding_plagiarism()
   
+def create_similarity_detect_report():
+    """创建相似度检测报告"""
   
-# 创建检测器实例
-detector = AdvancedSimilarityDetector()
-
-# 检测所有文档相似度
-results = detector.detect_similar_documents(threshold=0.7)
-
-# 检测投标抄袭
-plagiarism = detector.detect_bidding_plagiarism()
-
-# 生成报告
-report = detector.generate_similarity_report()
+    # 创建检测器实例
+    detector = AdvancedSimilarityDetector()
+    
+    # 检测所有文档相似度
+    results = detector.detect_similar_documents(threshold=0.7)
+    
+    # 检查 results 是否为错误消息
+    if isinstance(results, dict) and 'message' in results:
+        print(f"   ⚠ {results['message']}")
+        print("   跳过相似度检测，直接生成基础报告")
+    elif isinstance(results, list):
+        print(f"   ✓ 发现 {len(results)} 对相似文档")
+    else:
+        print("   ⚠ 相似度检测结果异常")
+    
+    # 检测投标抄袭
+    plagiarism = detector.detect_bidding_plagiarism()
+    
+    # 生成报告
+    report = detector.generate_similarity_report()
+    
+    return report

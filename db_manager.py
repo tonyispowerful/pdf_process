@@ -18,6 +18,21 @@ def get_all_data():
     """获取所有数据"""
     return list(collection.find())
 
+def get_unique_data():
+    """获取文件名不重复的数据"""
+    pipeline = [
+        {
+            "$group": {
+                "_id": "$文件名",  # 按文件名分组
+                "doc": {"$first": "$$ROOT"}  # 取每组的第一个文档
+            }
+        },
+        {
+            "$replaceRoot": {"newRoot": "$doc"}  
+        }
+    ]
+    return list(collection.aggregate(pipeline))
+
 def get_data_by_file_type(file_type):
     """根据文件类型获取数据"""
     return list(collection.find({"文件类型": file_type}))
