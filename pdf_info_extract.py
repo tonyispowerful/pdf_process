@@ -182,10 +182,10 @@ def determine_file_type(file_name, text_preview=""):
     file_name_lower = file_name.lower()
     
     # 基于文件名判断
-    if any(keyword in file_name_lower for keyword in ["招标", "采购", "公告"]):
-        return "招标文件"
-    elif any(keyword in file_name_lower for keyword in ["投标", "响应", "报价"]):
+    if any(keyword in file_name_lower for keyword in ["投标", "响应", "报价"]):
         return "投标文件"
+    elif any(keyword in file_name_lower for keyword in ["招标", "采购", "公告"]):
+        return "招标文件"
 
     
     # 基于内容判断（如果文件名不明确）

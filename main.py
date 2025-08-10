@@ -6,5 +6,6 @@ if __name__ == "__main__":
     from db_manager import export_to_excel
     export_to_excel("标书数据.xlsx")
 
+    # 创立相似度检测报告
     from similarity_detect import create_similarity_detect_report
     create_similarity_detect_report("similarity_report.xlsx")
