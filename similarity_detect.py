@@ -248,6 +248,7 @@ class AdvancedSimilarityDetector:
                             'file1': doc1.get('文件名'),
                             'file2': doc2.get('文件名'),
                             'similarity_score': similarity['overall_similarity'],
+                            'detailed_scores': similarity['detailed_scores'],
                             'plagiarism_risk': 'HIGH' if similarity['overall_similarity'] > 0.8 else 'MEDIUM'
                         })
         
@@ -374,6 +375,14 @@ class AdvancedSimilarityDetector:
                   report.append(f"   风险评估: {risk_level}")
                   report.append("")
                   
+                  # 添加各评分方法的分数
+                  detailed_scores = result.get('detailed_scores', {})
+                  if detailed_scores:
+                      report.append("   各评分方法分数：")
+                      for method, method_score in detailed_scores.items():
+                          report.append(f"     - {method}: {method_score:.4f}")
+                  report.append("")          
+                          
               except Exception as e:
                   report.append(f"   抄袭检测 #{i}: 数据解析错误 - {str(e)}")
                   report.append("")
